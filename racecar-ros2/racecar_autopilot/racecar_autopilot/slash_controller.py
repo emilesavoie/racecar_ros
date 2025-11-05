@@ -32,10 +32,27 @@ class SlashController(Node):
 
         # Controller
         self.steering_offset = 0.0  # To adjust according to the vehicle
-
-        self.K_autopilot = None  # TODO: DESIGN LQR
+        self.K_autopilot = np.array([
+            [0, 0, 8.22200412],
+            [0.31622777, 0.53827192, 0]
+        ])
 
         self.K_parking = None  # TODO: DESIGN PLACEMENT DE POLES
+
+        self.Rm = 0.64
+        self.km = 0.0028
+        self.Jm = 0.00005
+        self.bm = 0.00001
+        self.tau_s = 0.01
+        self.N = 15.3
+        self.r = 0.04
+        self.Cd = 0.5
+        self.Cr = 0.01
+        self.L = 0.3
+        self.m = 5
+        self.v_nom = 2
+        self.rho = 1.2
+        self.Aire = 0.29*0.12
 
         # Memory
 
@@ -88,7 +105,7 @@ class SlashController(Node):
                 # Closed-loop velocity on arduino, open-loop steering
                 self.propulsion_cmd = self.propulsion_ref
                 self.arduino_mode = 2
-                self.steering_cmd = self.steering_ref + self.steering_offset
+                self.steering_cmd = self.propulsion_ref + self.steering_offset
 
             elif self.high_level_mode == 2:
                 # Closed-loop position on arduino, open-loop steering
@@ -109,14 +126,14 @@ class SlashController(Node):
                 # r = [ ?,? ,.... ]
                 # u = [ servo_cmd , prop_cmd ]
 
-                x = None
-                r = None
+                x = [self.laser_y, self.laser_theta, self.velocity]
+                r = [0, 0, 2] 
 
                 u = self.controller1(x, r)
 
                 self.steering_cmd = u[1] + self.steering_offset
                 self.propulsion_cmd = u[0]
-                self.arduino_mode = 0  # Mode ??? on arduino
+                self.arduino_mode = 1  # Mode ??? on arduino
                 # TODO: COMPLETEZ LE CONTROLLER
                 #########################################################
 
@@ -164,14 +181,45 @@ class SlashController(Node):
 
         self.send_arduino()
 
+    def control_law(x, K, r):
+
+        V_sat = 8.4
+        delta_sat = 0.5
+
+        """
+        Calcule u = -K (x - x_ref) et applique saturations.
+        x: vecteur état [y, theta, v]
+        K: matrice 2x3
+        retourne: V, delta (après saturation)
+        """
+        x_tilde = x - r  # erreur par rapport à la consigne
+        u = -K @ x_tilde     # commande continue
+        V = float(u[0])
+        delta = float(u[1])
+        # saturations
+        V = np.clip(V + 6.5, 0, V_sat)
+        delta = np.clip(delta, -delta_sat, delta_sat)
+        return V, delta
+    
+    def sign_smooth(x):
+        if x == 0:
+            return 0
+        elif x > 0:
+            return 1
+        else:
+            return -1
+
     #######################################
     def controller1(self, y, r):
 
         # Control Law TODO
 
-        u = np.array([0, 0])  # placeholder
+        y, theta, v = y
 
-        # u = self.K_autopilot @ (r - x)
+        # commande (fermée)
+        V, delta = self.control_law(y, self.K_autopilot, r)
+
+        u = np.array([V, delta])  # placeholder
 
         return u
 
